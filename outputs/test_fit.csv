@@ -1,3 +1,3 @@
-,R2,RMSE
-Baseline (average),-0.014,6494.0
-v1 (regression),0.823,2716.0
+,R2,RMSE,avg_miss,within_2k,within_5k,largest_miss,n_cars
+Baseline (average),-0.014,6494.0,5155.0,18,41,17351.0,72
+v1 (regression),0.823,2716.0,2202.0,35,66,7144.0,72

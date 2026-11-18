@@ -41,6 +41,19 @@ summary = pd.DataFrame({
 print(summary.to_string())
 
 
+def describe(df: pd.DataFrame) -> dict:
+    return {"cars": len(df), "avg_price": round(df[TARGET].mean()),
+            "min_price": df[TARGET].min(), "max_price": df[TARGET].max(),
+            "accident_share": round(df["Accident"].mean(), 3)}
+
+
+data_summary = pd.DataFrame({"all_sales": describe(sales), "training": describe(train),
+                             "test": describe(test)})
+data_summary.to_csv(OUT / "data_summary.csv")
+print("\nData summary (slide table):")
+print(data_summary.to_string())
+
+
 # ---------------------------------------------------------------------------
 # Step 2: fit the linear regression on the training cars
 # ---------------------------------------------------------------------------
@@ -115,13 +128,23 @@ pred_v1 = model.predict(sm.add_constant(test[V1_FEATURES], has_constant="add"))
 
 
 def fit_stats(y, yhat):
-    return {"R2": r2_score(y, yhat), "RMSE": float(np.sqrt(mean_squared_error(y, yhat)))}
+    miss = (y - yhat).abs()
+    return {"R2": r2_score(y, yhat),
+            "RMSE": float(np.sqrt(mean_squared_error(y, yhat))),  # typical error
+            "avg_miss": float(miss.mean()),                         # mean absolute error
+            "within_2k": int((miss <= 2_000).sum()),
+            "within_5k": int((miss <= 5_000).sum()),
+            "largest_miss": float(miss.max()),
+            "n_cars": len(y)}
 
 
 test_fit = pd.DataFrame({"Baseline (average)": fit_stats(actual, pred_baseline),
                          "v1 (regression)": fit_stats(actual, pred_v1)}).T
 test_fit["R2"] = test_fit["R2"].round(3)
-test_fit["RMSE"] = test_fit["RMSE"].round(0)
+for c in ["RMSE", "avg_miss", "largest_miss"]:
+    test_fit[c] = test_fit[c].round(0)
+for c in ["within_2k", "within_5k", "n_cars"]:
+    test_fit[c] = test_fit[c].astype(int)
 test_fit.to_csv(OUT / "test_fit.csv")
 
 print("\nSTEP 3: FIT ON THE 72 TEST CARS")
@@ -217,3 +240,35 @@ print("\nLots each rule buys:")
 print(lots[(lots.Decision_v1 == "buy") | (lots.Decision_baseline == "buy")][
     ["Lot", "Auction_Price", "Predicted_v1", "Later_Sale_Price", "Profit_if_bought",
      "Decision_baseline", "Decision_v1"]].to_string(index=False))
+
+# Chart: the two rules side by side on the 40 auction lots
+metrics = [("cars_bought", "Cars bought", "{:,.0f}"),
+           ("money_losers", "Cars that lost money", "{:,.0f}"),
+           ("total_profit", "Total profit", "${:,.0f}")]
+rules = [("Baseline (average)", "Baseline", ORANGE), ("v1 (regression)", "v1 model", BLUE)]
+fig, axes = plt.subplots(1, 3, figsize=(11, 4.4))
+for ax, (col, title, fmt) in zip(axes, metrics):
+    vals = [results.loc[key, col] for key, _, _ in rules]
+    bars = ax.bar([lab for _, lab, _ in rules], vals, width=0.55,
+                  color=[c for _, _, c in rules], edgecolor="white", linewidth=2, zorder=2)
+    span = max(abs(v) for v in vals)
+    for b, v in zip(bars, vals):
+        label = fmt.format(abs(v)) if col != "total_profit" else ("−" if v < 0 else "+") + fmt.format(abs(v))
+        y = v + (0.04 * span if v >= 0 else -0.04 * span)
+        ax.text(b.get_x() + b.get_width() / 2, y, label, ha="center",
+                va="bottom" if v >= 0 else "top", fontsize=13, color=INK, fontweight="bold")
+    if col == "total_profit":
+        ax.set_ylim(min(0, min(vals)) * 1.8, max(vals) * 1.25)
+    else:  # both count panels share one scale so bar heights compare across them
+        ax.set_ylim(0, results[["cars_bought", "money_losers"]].values.max() * 1.25)
+    ax.axhline(0, color=MUTED, lw=1, zorder=3)
+    ax.set_title(title, loc="left", fontsize=12.5, color=INK, fontweight="bold")
+    ax.set_yticks([]); ax.grid(False)
+    for s in ("top", "right", "left", "bottom"):
+        ax.spines[s].set_visible(False)
+    ax.tick_params(axis="x", length=0, labelsize=11.5, colors=INK)
+fig.suptitle("Same 40 auction lots, two buying rules",
+             x=0.02, ha="left", fontsize=13.5, color=INK)
+fig.tight_layout(w_pad=4)
+fig.savefig(OUT / "auction_rules_comparison.png", dpi=200, bbox_inches="tight", facecolor="white")
+plt.close(fig)

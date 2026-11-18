@@ -1,0 +1,6 @@
+,all_sales,training,test
+cars,240.0,168.0,72.0
+avg_price,26078.0,25851.0,26606.0
+min_price,5300.0,5300.0,8500.0
+max_price,45200.0,45200.0,39000.0
+accident_share,0.233,0.208,0.292
