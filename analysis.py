@@ -162,3 +162,58 @@ fig.suptitle("72 test cars the model never saw: predicted vs actual sale price",
 fig.tight_layout()
 fig.savefig(OUT / "pred_vs_actual_test.png", dpi=200, bbox_inches="tight", facecolor="white")
 plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Step 4: the buy/pass decision on the 40 auction lots
+# ---------------------------------------------------------------------------
+PREP_COST = 1_500  # inspection, reconditioning, detailing and lot time, per car
+
+
+def predict_price(car: dict) -> float:
+    """v1's predicted retail sale price for one car (Accident given as 'yes'/'no' or 1/0)."""
+    acc = car["Accident"]
+    acc = int(str(acc).strip().lower() in ("yes", "1"))
+    row = {"const": 1.0, "Mileage_K": car["Mileage_K"], "Age_Years": car["Age_Years"],
+           "Horsepower": car["Horsepower"], "Accident": acc}
+    return float(sum(model.params[k] * row[k] for k in model.params.index))
+
+
+def decide(car: dict, auction_price: float) -> str:
+    """Dealer's rule: buy if auction price + prep cost is below the predicted sale price."""
+    return "buy" if auction_price + PREP_COST < predict_price(car) else "pass"
+
+
+def decide_baseline(auction_price: float) -> str:
+    """Baseline rule: same test, but every car is predicted at the training average."""
+    return "buy" if auction_price + PREP_COST < baseline_price else "pass"
+
+
+lots = pd.read_csv(DATA / "auction_lots.csv")
+lots["Predicted_v1"] = [round(predict_price(c)) for c in lots.to_dict("records")]
+lots["Decision_v1"] = [decide(c, c["Auction_Price"]) for c in lots.to_dict("records")]
+lots["Decision_baseline"] = [decide_baseline(p) for p in lots["Auction_Price"]]
+lots["Profit_if_bought"] = lots["Later_Sale_Price"] - lots["Auction_Price"] - PREP_COST
+lots.to_csv(OUT / "auction_decisions.csv", index=False)
+
+
+def tally(decision_col: str) -> dict:
+    bought = lots[lots[decision_col] == "buy"]
+    return {"cars_bought": len(bought),
+            "money_losers": int((bought["Profit_if_bought"] < 0).sum()),
+            "total_profit": int(bought["Profit_if_bought"].sum())}
+
+
+results = pd.DataFrame({"Baseline (average)": tally("Decision_baseline"),
+                        "v1 (regression)": tally("Decision_v1")}).T
+results.to_csv(OUT / "auction_results.csv")
+
+print("\nSTEP 4: BUY/PASS ON THE 40 AUCTION LOTS")
+print(f"  Baseline buys any car with auction price + ${PREP_COST:,} < ${baseline_price:,.0f}")
+print(results.to_string())
+gain = results.loc["v1 (regression)", "total_profit"] - results.loc["Baseline (average)", "total_profit"]
+print(f"  v1 earns ${gain:,} more than the baseline on this auction")
+print("\nLots each rule buys:")
+print(lots[(lots.Decision_v1 == "buy") | (lots.Decision_baseline == "buy")][
+    ["Lot", "Auction_Price", "Predicted_v1", "Later_Sale_Price", "Profit_if_bought",
+     "Decision_baseline", "Decision_v1"]].to_string(index=False))

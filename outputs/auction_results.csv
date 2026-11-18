@@ -1,0 +1,3 @@
+,cars_bought,money_losers,total_profit
+Baseline (average),14,10,-6000
+v1 (regression),17,6,15800
